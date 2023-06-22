@@ -1,0 +1,5 @@
+numpy
+librosa>=0.10
+torch
+fairseq
+pandas
