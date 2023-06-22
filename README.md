@@ -1,5 +1,4 @@
-# StressID
-StressID - a Multimodal Dataset for Stress Identification
+# StressID - A Multimodal Dataset for Stress Identification
 
 See https://project.inria.fr/stressid/ for more information about the project and dataset.
 
