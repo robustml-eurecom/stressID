@@ -13,3 +13,6 @@ StressID: a Multimodal Dataset for Stress Identification. In Thirty-seventh Conf
 Information Processing Systems Datasets and Benchmarks Track.
 ```
 
+### License
+
+This code is released under the BSD-3 license. Please see the license file for details.
