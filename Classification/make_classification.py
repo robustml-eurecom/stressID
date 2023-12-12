@@ -13,19 +13,20 @@ from sklearn.tree import DecisionTreeClassifier
 
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 from sklearn.model_selection import train_test_split, LeaveOneOut, GroupKFold
-from sklearn.svm import LinearSVC, SVR
+from sklearn.svm import LinearSVC, SVR, SVC
 from sklearn.feature_selection import SelectFromModel
 from sklearn.pipeline import Pipeline
 from sklearn.feature_selection import RFE
 from sklearn.feature_selection import RFECV
 from sklearn.metrics import balanced_accuracy_score, f1_score
+from sklearn.decomposition import PCA
 
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 from sklearn.preprocessing import StandardScaler
 
-from sklearn.utils import shuffle
-
+from sklearn.utils import shuffle, resample
+from imblearn.over_sampling import SMOTE
 
 
 
@@ -139,6 +140,7 @@ def avg_res(res):
 def make_nclassif_random_splits(X, y, n_splits=10, feature_selector=None, list_classifiers=None, impute=True, scale=True, verbose=True):
     # Dictionnary to store f1-score and accuracy
     df_res= pd.DataFrame({'n':[],'f1-score':[],'accuracy':[], 'classifier':[]})
+    conf_matrices = []
     
     if impute:
         imputer = IterativeImputer()
@@ -188,6 +190,15 @@ def make_nclassif_random_splits(X, y, n_splits=10, feature_selector=None, list_c
                                                 cv=2)),
                     ('classification', model)
                 ])
+            elif feature_selector == 'PCA':
+                pca = PCA(n_components=0.95, svd_solver='full')
+                
+                clf = Pipeline([
+                    ('impute',imputer), 
+                    ('scale', scaler), 
+                    ('pca', pca),
+                    ('classification', model)
+                ])
             else:
                 clf = Pipeline([
                     ('impute',imputer), 
@@ -201,9 +212,125 @@ def make_nclassif_random_splits(X, y, n_splits=10, feature_selector=None, list_c
             
             # Retrieve accuracy and F1-score
             y_pred = clf.predict(x_test)
+            conf_matrices.append(confusion_matrix(y_test, y_pred))
+            if model.__class__.__name__ == 'MLPClassifier':
+            	modelname = model.__class__.__name__+'_'+str(len(model.hidden_layer_sizes))+'_'+str(model.hidden_layer_sizes[0])
+            else :
+            	modelname = model.__class__.__name__
+            df_res = df_res.append({'n':int(s),'f1-score':f1_score(y_test, y_pred, average='weighted'),
+                                    'accuracy':balanced_accuracy_score(y_test, y_pred), 
+                                    'classifier':modelname, 'time':toc-tic},ignore_index=True)
+    
+    return df_res, conf_matrices
+
+##########################################################################################  
+
+
+
+
+
+def make_nclassif_random_splits_resample(X, y, n_splits=10, resamp = 'SMOTE', feature_selector=None, list_classifiers=None, impute=True, scale=True, verbose=True):
+    # Dictionnary to store f1-score and accuracy
+    df_res= pd.DataFrame({'n':[],'f1-score':[],'accuracy':[], 'classifier':[]})
+    conf_matrices = []
+    
+    if impute:
+        imputer = IterativeImputer()
+    else:
+        imputer = None
+        
+    if scale:
+        scaler = StandardScaler()
+    else:
+        scaler = None
+    
+    
+    # Defaut classifiers tested: Logistic regression, Random Forests, Adaboost
+    if not list_classifiers :
+        list_classifiers = [LogisticRegression(max_iter=2000),
+                            RandomForestClassifier(max_depth=5),
+                            AdaBoostClassifier(n_estimators=100)]
+                        
+    # Make n random splits 
+    for s in range(n_splits):        
+        x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+        
+        y_high = pd.Series(y_train[y_train == 1])
+        idx_high = list(x_train.merge(y_high, left_index= True, right_index=True).index)
+        x_high = x_train.loc[idx_high]
+
+        y_low = pd.Series(y_train[y_train == 0])
+        idx_low = list(x_train.merge(y_low, left_index= True, right_index=True).index)
+        x_low = x_train.loc[idx_low]
+
+        if resamp == 'down':
+            x_downsample = resample(x_high,
+                         replace=True,
+                         n_samples=len(x_low) + 20)
+
+            y_downsample = resample(y_high,
+                         replace=True,
+                         n_samples=len(y_low) + 20)
+
+            x_train =  pd.concat([x_downsample, x_low])
+            y_train = pd.concat([y_downsample, y_low])    
+            
+        else:
+            oversample = SMOTE()
+            x_train, y_train = oversample.fit_resample(x_train, y_train)
+            
+
+        if verbose:
+            print('Split {0:2d}/{1:2d}'.format(s+1, n_splits))
+        
+        # Fit each model
+        for i,model in enumerate(list_classifiers):
+
+            if feature_selector == 'l1':  
+                clf = Pipeline([
+                    ('impute',imputer), 
+                    ('scale', scaler), 
+                    ('feature_selection', SelectFromModel(LogisticRegression(max_iter=5000,
+                                                                             C=0.1, 
+                                                                             penalty="l1", 
+                                                                             dual=False, 
+                                                                             solver='saga'))),
+                    ('classification', model)
+                ])
+            elif feature_selector == 'RFE':
+                clf = Pipeline([
+                    ('impute',imputer), 
+                    ('scale', scaler), 
+                    ('feature_selection', RFECV(RandomForestClassifier(max_depth=5),
+                                                step=2, 
+                                                cv=2)),
+                    ('classification', model)
+                ])
+            elif feature_selector == 'PCA':
+                pca = PCA(n_components=0.95, svd_solver='full')
+                
+                clf = Pipeline([
+                    ('impute',imputer), 
+                    ('scale', scaler), 
+                    ('pca', pca),
+                    ('classification', model)
+                ])
+            else:
+                clf = Pipeline([
+                    ('impute',imputer), 
+                    ('scale', scaler), 
+                    ('classification', model)
+                ])
+                
+            tic = time.perf_counter()
+            clf.fit(x_train, y_train)
+            toc = time.perf_counter()
+            
+            # Retrieve accuracy and F1-score
+            y_pred = clf.predict(x_test)
+            conf_matrices.append(confusion_matrix(y_test, y_pred))
             df_res = df_res.append({'n':int(s),'f1-score':f1_score(y_test, y_pred, average='weighted'),
                                     'accuracy':balanced_accuracy_score(y_test, y_pred), 
                                     'classifier':model.__class__.__name__, 'time':toc-tic},ignore_index=True)
     
-    return df_res
-
+    return df_res, conf_matrices
