@@ -33,7 +33,7 @@ from imblearn.over_sampling import SMOTE
 # Compare several classification models over K repetition, using K group splits, grouped by subjects
 def make_nclassif(X, y, n_splits=10, feature_selector=None, list_classifiers=None, impute=True, scale=True, verbose=True):
     # Dictionnary to store f1-score and accuracy
-    df_res= pd.DataFrame({'n':[],'f1-score':[],'accuracy':[], 'classifier':[]})
+    df_res= pd.DataFrame({'n':[],'f1-score':[],'accuracy':[], 'classifier':[], 'time':[]})
     conf_matrices = []
     
     if impute:
@@ -119,9 +119,14 @@ def make_nclassif(X, y, n_splits=10, feature_selector=None, list_classifiers=Non
             # Retrieve accuracy and F1-score
             y_pred = clf.predict(x_test)
             conf_matrices.append(confusion_matrix(y_test, y_pred))
-            df_res = df_res.append({'n':int(s),'f1-score':f1_score(y_test, y_pred, average='weighted'),
+
+            new_row = {'n':int(s),'f1-score':f1_score(y_test, y_pred, average='weighted'),
                                     'accuracy':balanced_accuracy_score(y_test, y_pred), 
-                                    'classifier':model.__class__.__name__, 'time':toc-tic},ignore_index=True)
+                                    'classifier':model.__class__.__name__, 'time':toc-tic}
+        
+            df_res.loc[len(df_res)] = new_row 
+
+
     
     return df_res, conf_matrices
     
@@ -139,7 +144,7 @@ def avg_res(res):
        
 def make_nclassif_random_splits(X, y, n_splits=10, feature_selector=None, list_classifiers=None, impute=True, scale=True, verbose=True):
     # Dictionnary to store f1-score and accuracy
-    df_res= pd.DataFrame({'n':[],'f1-score':[],'accuracy':[], 'classifier':[]})
+    df_res= pd.DataFrame({'n':[],'f1-score':[],'accuracy':[], 'classifier':[], 'time':[]})
     conf_matrices = []
     
     if impute:
@@ -217,9 +222,13 @@ def make_nclassif_random_splits(X, y, n_splits=10, feature_selector=None, list_c
             	modelname = model.__class__.__name__+'_'+str(len(model.hidden_layer_sizes))+'_'+str(model.hidden_layer_sizes[0])
             else :
             	modelname = model.__class__.__name__
-            df_res = df_res.append({'n':int(s),'f1-score':f1_score(y_test, y_pred, average='weighted'),
+            
+            
+            
+            new_row = {'n':int(s),'f1-score':f1_score(y_test, y_pred, average='weighted'),
                                     'accuracy':balanced_accuracy_score(y_test, y_pred), 
-                                    'classifier':modelname, 'time':toc-tic},ignore_index=True)
+                                    'classifier':modelname, 'time':toc-tic}
+            df_res.loc[len(df_res)] = new_row 
     
     return df_res, conf_matrices
 
@@ -231,8 +240,11 @@ def make_nclassif_random_splits(X, y, n_splits=10, feature_selector=None, list_c
 
 def make_nclassif_random_splits_resample(X, y, n_splits=10, resamp = 'SMOTE', feature_selector=None, list_classifiers=None, impute=True, scale=True, verbose=True):
     # Dictionnary to store f1-score and accuracy
-    df_res= pd.DataFrame({'n':[],'f1-score':[],'accuracy':[], 'classifier':[]})
+    df_res= pd.DataFrame({'n':[],'f1-score':[],'accuracy':[], 'classifier':[], 'time':[]})
+
     conf_matrices = []
+    y_preds = []
+    y_tests = []
     
     if impute:
         imputer = IterativeImputer()
@@ -263,19 +275,7 @@ def make_nclassif_random_splits_resample(X, y, n_splits=10, resamp = 'SMOTE', fe
         idx_low = list(x_train.merge(y_low, left_index= True, right_index=True).index)
         x_low = x_train.loc[idx_low]
 
-        if resamp == 'down':
-            x_downsample = resample(x_high,
-                         replace=True,
-                         n_samples=len(x_low) + 20)
-
-            y_downsample = resample(y_high,
-                         replace=True,
-                         n_samples=len(y_low) + 20)
-
-            x_train =  pd.concat([x_downsample, x_low])
-            y_train = pd.concat([y_downsample, y_low])    
-            
-        else:
+        if resamp :
             oversample = SMOTE()
             x_train, y_train = oversample.fit_resample(x_train, y_train)
             
@@ -329,8 +329,14 @@ def make_nclassif_random_splits_resample(X, y, n_splits=10, resamp = 'SMOTE', fe
             # Retrieve accuracy and F1-score
             y_pred = clf.predict(x_test)
             conf_matrices.append(confusion_matrix(y_test, y_pred))
-            df_res = df_res.append({'n':int(s),'f1-score':f1_score(y_test, y_pred, average='weighted'),
+            
+            y_tests.append(pd.Series(y_test))
+            y_preds.append(pd.Series(y_pred, index = y_test.index))
+            
+            new_row = {'n':int(s),'f1-score':f1_score(y_test, y_pred, average='weighted'),
                                     'accuracy':balanced_accuracy_score(y_test, y_pred), 
-                                    'classifier':model.__class__.__name__, 'time':toc-tic},ignore_index=True)
+                                    'classifier':model.__class__.__name__, 'time':toc-tic}
+
+            df_res.loc[len(df_res)] = new_row 
     
-    return df_res, conf_matrices
+    return df_res, conf_matrices, y_preds, y_tests
